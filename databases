@@ -1,0 +1,184 @@
+-- =======================
+-- USERS: system login / operators
+-- =======================
+CREATE TABLE users (
+    user_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'USER' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(100),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP,
+    failed_login_attempts INT DEFAULT 0,
+    account_locked BOOLEAN DEFAULT false
+);
+
+-- =======================
+-- INSTITUTIONS: clearing members
+-- =======================
+CREATE TABLE institutions (
+    institution_id VARCHAR(10) PRIMARY KEY 
+        DEFAULT 'INST' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    institution_name VARCHAR(100) UNIQUE NOT NULL,
+    legal_entity_identifier CHAR(20),
+    institution_type VARCHAR(30) NOT NULL,
+    country VARCHAR(50) NOT NULL,
+    capital_requirement NUMERIC(18,2) DEFAULT 0,
+    margin_balance NUMERIC(18,2) DEFAULT 0,
+    default_fund_contribution NUMERIC(18,2) DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    risk_rating VARCHAR(10),
+    contact_email VARCHAR(100),
+    contact_phone VARCHAR(20),
+    portfolio_id VARCHAR(10) UNIQUE NOT NULL 
+        DEFAULT 'PRTF' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    authorized_user_id VARCHAR(10),
+    last_risk_assessment TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_institutions_authorized_user FOREIGN KEY (authorized_user_id) REFERENCES users(user_id),
+    CONSTRAINT chk_institution_type CHECK (institution_type IN ('BROKER', 'BANK', 'FUND', 'INSURANCE'))
+);
+
+-- =======================
+-- INSTITUTION ACCOUNTS: multiple accounts per institution
+-- =======================
+CREATE TABLE institution_accounts (
+    account_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'ACCT' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    account_name VARCHAR(100) NOT NULL,
+    account_type VARCHAR(30) NOT NULL, -- e.g., CASH, MARGIN, DEFAULT_FUND
+    currency CHAR(3) NOT NULL, -- e.g., USD, EUR, BRL
+    balance NUMERIC(18,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_account_per_type UNIQUE (institution_id, account_type, currency),
+    CONSTRAINT chk_account_type CHECK (account_type IN ('CASH', 'MARGIN', 'DEFAULT_FUND', 'COLLATERAL'))
+);
+
+-- =======================
+-- PORTFOLIO / ASSETS: positions held by institution
+-- =======================
+CREATE TABLE institution_portfolios (
+    id SERIAL PRIMARY KEY,
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    instrument_id VARCHAR(10) NOT NULL,
+    quantity NUMERIC(18,4) NOT NULL,
+    market_value NUMERIC(18,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_position_per_security UNIQUE (institution_id, instrument_id),
+    CONSTRAINT fk_portfolios_instrument FOREIGN KEY (instrument_id) REFERENCES instruments(instrument_id)
+);
+
+-- =======================
+-- LIABILITIES: obligations owed by institution
+-- =======================
+CREATE TABLE institution_liabilities (
+    id SERIAL PRIMARY KEY,
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    liability_type VARCHAR(50) NOT NULL,
+    amount NUMERIC(18,2) NOT NULL,
+    due_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =======================
+-- MARGIN CALLS: margin requirements per institution
+-- =======================
+CREATE TABLE margin_calls (
+    margin_call_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'MRGN' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    required_margin NUMERIC(18,2) NOT NULL,
+    posted_margin NUMERIC(18,2) DEFAULT 0,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING','SATISFIED','DEFAULT')),
+    due_date TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =======================
+-- COLLATERAL: posted against margin calls
+-- =======================
+CREATE TABLE collateral (
+    collateral_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'COLL' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    margin_call_id VARCHAR(10) REFERENCES margin_calls(margin_call_id),
+    account_id VARCHAR(10) REFERENCES institution_accounts(account_id),
+    collateral_type VARCHAR(30) NOT NULL,
+    currency CHAR(3) NOT NULL,
+    amount NUMERIC(18,2) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('POSTED','RELEASED','LIQUIDATED')),
+    posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =======================
+-- ORDERS: instructions to buy or sell (pre-trade)
+-- =======================
+CREATE TABLE orders (
+    order_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'ORDR' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    instrument_id VARCHAR(10) NOT NULL,
+    quantity NUMERIC(18,4) NOT NULL,
+    price NUMERIC(18,4) NOT NULL,
+    side VARCHAR(4) NOT NULL CHECK (side IN ('BUY','SELL')),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('NEW','PARTIALLY_FILLED','FILLED','CANCELED','REJECTED')),
+    created_by_user_id VARCHAR(10) REFERENCES users(user_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_orders_instrument FOREIGN KEY (instrument_id) REFERENCES instruments(instrument_id)
+);
+
+-- =======================
+-- PENDING TRADES: executed trades not yet cleared
+-- =======================
+CREATE TABLE pending_trades (
+    trade_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'TRDE' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    buy_order_id VARCHAR(10) REFERENCES orders(order_id),
+    sell_order_id VARCHAR(10) REFERENCES orders(order_id),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    instrument_id VARCHAR(10) NOT NULL,
+    quantity NUMERIC(18,4) NOT NULL,
+    price NUMERIC(18,4) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING','CLEARED','CANCELED')),
+    created_by_user_id VARCHAR(10) REFERENCES users(user_id),
+    trade_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pending_trades_instrument FOREIGN KEY (instrument_id) REFERENCES instruments(instrument_id)
+);
+
+-- =======================
+-- CLEARED TRADES: fully executed and cleared trades
+-- =======================
+CREATE TABLE cleared_trades (
+    trade_id VARCHAR(10) PRIMARY KEY,
+    buy_order_id VARCHAR(10) REFERENCES orders(order_id),
+    sell_order_id VARCHAR(10) REFERENCES orders(order_id),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    instrument_id VARCHAR(10) NOT NULL,
+    quantity NUMERIC(18,4) NOT NULL,
+    price NUMERIC(18,4) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('CLEARED','CANCELED')),
+    created_by_user_id VARCHAR(10) REFERENCES users(user_id),
+    trade_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    cleared_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    settlement_status VARCHAR(20),
+    CONSTRAINT fk_cleared_trades_instrument FOREIGN KEY (instrument_id) REFERENCES instruments(instrument_id)
+);
+
+-- =======================
+-- TRADE SETTLEMENTS: cash/account instructions for cleared trades
+-- =======================
+CREATE TABLE trade_settlements (
+    settlement_id VARCHAR(10) PRIMARY KEY
+        DEFAULT 'STLM' || LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0'),
+    trade_id VARCHAR(10) NOT NULL REFERENCES cleared_trades(trade_id),
+    institution_id VARCHAR(10) REFERENCES institutions(institution_id),
+    account_id VARCHAR(10) REFERENCES institution_accounts(account_id),
+    currency CHAR(3) NOT NULL,
+    amount NUMERIC(18,2) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING','SETTLED','FAILED')),
+    settlement_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+

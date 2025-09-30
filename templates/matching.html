@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Matching - Cleara</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+  <style>
+    body {
+      font-family: monospace, Arial, sans-serif;
+      background-color: #fff;
+      color: #000;
+      margin: 20px;
+      font-size: 11px;
+    }
+    .navbar { background-color: #eee; padding: 3px 6px; border-bottom: 1px solid #aaa; font-size: 11px; }
+    .navbar .nav-link { text-decoration: none; color: #000; margin-right: 10px; }
+    .navbar .nav-link:hover { text-decoration: underline; }
+    .user-info { float: right; font-size: 10px; font-weight: normal; }
+    .order-row { display: flex; align-items: center; margin-bottom: 2px; border-bottom: 1px solid #aaa; padding-bottom: 2px; font-size: 11px; }
+    .order-row div { padding: 0 4px; }
+    h2 { font-size: 13px; margin-top: 15px; }
+    .orders-list { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg">
+  <div class="container-fluid p-0">
+    <ul class="navbar-nav me-auto mb-2 mb-lg-0 d-flex flex-row">
+      <li class="nav-item"><a class="nav-link" href="/home">Home</a></li>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown" aria-expanded="false">Orders</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="/display-securities">Trades</a></li>
+          <li><a class="dropdown-item" href="/orders">Orders</a></li>
+          <li><a class="dropdown-item" href="#">Trade History</a></li>
+          <li><a class="dropdown-item" href="/register-fixed-income">Securities</a></li>
+        </ul>
+      </li>
+      <li class="nav-item"><a class="nav-link" href="/matching">Matching</a></li>
+      <li class="nav-item"><a class="nav-link" href="/portfolio">Portfolio</a></li>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="/register">Users</a></li>
+          <li><a class="dropdown-item" href="/register-institution">Institutions</a></li>
+          <li><a class="dropdown-item" href="/register-account">Accounts</a></li>
+          <li><a class="dropdown-item" href="#">System Monitor</a></li>
+        </ul>
+      </li>
+    </ul>
+    <div class="user-info">
+      <span>{{.UserCode}} - {{.Name}}</span><br>
+      <span>{{.InstitutionName}}</span>
+    </div>
+  </div>
+</nav>
+
+<h2>Approved Trades for Matching</h2>
+<div class="orders-list" id="approved-trades">
+  <div class="order-row fw-bold" style="border-bottom:2px solid #000;">
+    <div style="width:80px;">Instrument</div>
+    <div style="width:80px;">Side</div>
+    <div style="width:70px;">Quantity</div>
+    <div style="width:70px;">Price</div>
+    <div style="width:100px;">Order Code</div>
+    <div style="width:120px;">Counterpart</div>
+    <div style="width:80px;">Status</div>
+  </div>
+
+  {{range .ApprovedTrades}}
+  <div class="order-row" data-order-id="{{.OrderID}}">
+    <div style="width:80px;">{{.InstrumentID}}</div>
+    <div style="width:80px;">{{.Side}}</div>
+    <div style="width:70px; text-align:right;">{{printf "%.2f" .Quantity}}</div>
+    <div style="width:70px; text-align:right;">{{printf "%.4f" .Price}}</div>
+    <div style="width:100px;">{{.OrderCode}}</div>
+    <div style="width:120px;">{{.Counterpart}}</div>
+    <div class="status" style="width:80px;">{{.Status}}</div>
+  </div>
+  {{end}}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
+</body>
+</html>

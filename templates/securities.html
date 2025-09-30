@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Securities - Cleara</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+  <style>
+    body {
+      font-family: monospace, Arial, sans-serif;
+      background-color: #fff;
+      color: #000;
+      margin: 20px;
+      font-size: 11px;
+    }
+    .navbar { background-color: #eee; padding: 3px 6px; border-bottom: 1px solid #aaa; font-size: 11px; }
+    .navbar .nav-link { text-decoration: none; color: #000; margin-right: 10px; }
+    .navbar .nav-link:hover { text-decoration: underline; }
+    .user-info { float: right; font-size: 10px; font-weight: normal; }
+    .security-row { display: flex; align-items: center; margin-bottom: 2px; border-bottom: 1px solid #aaa; padding-bottom: 2px; font-size: 11px; }
+    .security-row div { padding: 0 4px; }
+    .security-row .trade-btn { padding: 1px 4px; font-size: 10px; }
+    .modal-body label { font-size: 12px; }
+  </style>
+</head>
+<body>
+
+<!-- Trade Modal -->
+<div class="modal fade" id="tradeModal" tabindex="-1" aria-labelledby="tradeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="font-size: 12px;">
+      <div class="modal-header">
+        <h5 class="modal-title" id="tradeModalLabel">New Trade</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <form method="POST" action="/order">
+        <div class="modal-body">
+          <input type="hidden" id="instrumentId" name="instrument_id">
+
+          <div class="mb-2">
+            <label class="form-label">Instrument</label>
+            <input type="text" class="form-control" id="instrumentName" readonly>
+          </div>
+
+          <!-- Account, Side, Counterparty -->
+          <div class="row mb-2">
+            <div class="col-md-4">
+              <label class="form-label">Account</label>
+              <select class="form-select" name="account_id" required>
+                <option value="CASH">CASH</option>
+                <option value="MARGIN">MARGIN</option>                
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Side</label>
+              <select class="form-select" name="side" required>
+                <option value="BUY">Buy</option>
+                <option value="SELL">Sell</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Counterparty</label>
+              <select class="form-select" name="counterparty" required>
+                <option value="">-- Select Institution --</option>
+                {{range .Institutions}}
+                  <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+
+          <!-- Quantity, Price, Trade Date -->
+          <div class="row mb-2">
+            <div class="col-md-4">
+              <label class="form-label">Quantity</label>
+              <input type="number" step="1" class="form-control" name="quantity" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Price</label>
+              <input type="number" step="0.0001" class="form-control" name="price" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Trade Date</label>
+              <input type="date" class="form-control" name="trade_date" required>
+            </div>
+          </div>
+
+          <!-- Trade Type and Fees -->
+          <div class="row mb-2">
+            <div class="col-md-6">
+              <label class="form-label">Trade Type</label>
+              <select class="form-select" name="trade_type" required>
+                <option value="SPOT">Spot</option>
+                <option value="FORWARD">Forward</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Fees</label>
+              <input type="number" step="0.01" class="form-control" name="fees">
+            </div>
+          </div>
+
+          <!-- Observations -->
+          <div class="mb-2">
+            <label class="form-label">Observations</label>
+            <textarea class="form-control" name="observations" rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary btn-sm">Submit Trade</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg">
+  <div class="container-fluid p-0">
+    <ul class="navbar-nav me-auto mb-2 mb-lg-0 d-flex flex-row">
+      <li class="nav-item"><a class="nav-link" href="/home">Home</a></li>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" role="button" data-bs-toggle="dropdown" aria-expanded="false">Orders</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="/display-securities">Trades</a></li>
+          <li><a class="dropdown-item" href="#">Pending Orders</a></li>
+          <li><a class="dropdown-item" href="#">Cleared Trades</a></li>
+          <li><a class="dropdown-item" href="#">Trade History</a></li>
+          <li><a class="dropdown-item" href="/register-fixed-income">Securities</a></li>
+        </ul>
+      </li>
+      <li class="nav-item"><a class="nav-link" href="/matching">Matching</a></li>
+      <li class="nav-item"><a class="nav-link" href="/portfolio">Portfolio</a></li>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="/register">Users</a></li>
+          <li><a class="dropdown-item" href="/register-institution">Institutions</a></li>
+          <li><a class="dropdown-item" href="/register-account">Accounts</a></li>
+          <li><a class="dropdown-item" href="#">System Monitor</a></li>
+        </ul>
+      </li>
+    </ul>
+    <div class="user-info">
+      <span>{{.UserCode}} - {{.Name}}</span><br>
+      <span>{{.InstitutionName}}</span>
+    </div>
+  </div>
+</nav>
+
+<h2 style="font-size:13px; margin-top: 15px;">Securities for Your Institution</h2>
+
+<div class="securities-list">
+  {{range .Securities}}
+  <div class="security-row">
+    <div style="width:80px;">{{.Ticker}}</div>
+    <div style="width:80px;">{{.Type}}</div>
+    <div style="width:90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{.Name}}</div>
+    <div style="width:90px;">{{.MaturityDate.Format "2006-01-02"}}</div>
+    <div style="width:70px; text-align:right;">{{printf "%.2f" .FaceValue}}</div>
+    <div style="width:70px; text-align:right;">{{if .CuponRate.Valid}}{{printf "%.4f" .CuponRate.Float64}}{{end}}</div>
+    <div style="width:70px; text-align:right;">{{if .FixedRate.Valid}}{{printf "%.4f" .FixedRate.Float64}}{{end}}</div>
+    <div style="width:60px;">{{.Rating}}</div>
+    <button type="button" class="btn btn-sm btn-primary trade-btn"
+      data-bs-toggle="modal"
+      data-bs-target="#tradeModal"
+      data-instrument-id="{{.InstrumentID}}"
+      data-instrument-name="{{.Name}}">
+      Trade
+    </button>
+  </div>
+  {{end}}
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const tradeModal = document.getElementById('tradeModal');
+  tradeModal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    document.getElementById('instrumentId').value = button.getAttribute('data-instrument-id');
+    document.getElementById('instrumentName').value = button.getAttribute('data-instrument-name');
+  });
+});
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+</body>
+</html>
