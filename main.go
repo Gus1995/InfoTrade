@@ -52,7 +52,7 @@ type Institution struct {
 type Trade struct {
 	ApprovedTradeID int64
 	OrderID         int64
-	InstrumentID    int64
+	InstrumentID    string
 	Side            string
 	Quantity        float64
 	Price           float64
@@ -60,7 +60,8 @@ type Trade struct {
 	Status          string
 	OrderPlacer     int64
 	PlacerName      string
-	CounterpartName sql.NullString
+	BuyerName       string // NEW
+	SellerName      string // NEW
 }
 
 type Security struct {
@@ -99,6 +100,7 @@ type ApprovedTrade struct {
 	OrderPlacer int64  // the ID
 	PlacerName  string // the name of the order placer
 	ApprovedAt  time.Time
+	Ticker      string
 }
 
 // --------------------- Helper ---------------------
@@ -622,7 +624,7 @@ func runMatchingEngine() {
 
 func matchTrades() {
 	rows, err := db.Query(`
-		SELECT approved_trade_id, order_id, instrument_id, side, quantity, price, secret_code, status, approved_at
+		SELECT approved_trade_id, order_id, ticker, side, quantity, price, secret_code, status, approved_at
 		FROM approved_trades
 		WHERE status='pending_match'
 		ORDER BY approved_at ASC
@@ -636,7 +638,7 @@ func matchTrades() {
 	var trades []ApprovedTrade
 	for rows.Next() {
 		var t ApprovedTrade
-		if err := rows.Scan(&t.ID, &t.OrderID, &t.Instrument, &t.Side, &t.Quantity, &t.Price, &t.SecretCode, &t.Status, &t.ApprovedAt); err == nil {
+		if err := rows.Scan(&t.ID, &t.OrderID, &t.Ticker, &t.Side, &t.Quantity, &t.Price, &t.SecretCode, &t.Status, &t.ApprovedAt); err == nil {
 			trades = append(trades, t)
 		}
 	}
@@ -680,25 +682,27 @@ func showMatchingScreen(c echo.Context) error {
 	}
 
 	rows, err := db.Query(`
-         SELECT 
-        at.approved_trade_id,
-        at.order_id,
-        at.instrument_id,
-        at.side,
-        at.quantity,
-        at.price,
-        at.secret_code AS order_code,
-        at.status,
-        at.order_placer,
-        u.name AS placer_name,
-        i.name AS counterpart_name
-    FROM approved_trades at
-    JOIN users u ON at.order_placer = u.user_id
-    LEFT JOIN orders o ON at.order_id = o.order_id
-    LEFT JOIN institutions i ON o.counterparty_id = i.institution_id
-    WHERE (u.institution_id = $1 OR o.counterparty_id = $1)
-      AND at.status = 'pending_match'
-    ORDER BY at.approved_at DESC
+        SELECT
+    at.approved_trade_id,
+    at.order_id,
+    at.instrument_id,
+    at.side,
+    at.quantity,
+    at.price,
+    at.secret_code AS order_code,
+    at.status,
+    at.order_placer,               -- keep this for logic
+    inst_placer.name AS buyer,     -- <-- institution name of the placer
+    i_counterparty.name AS seller  -- <-- institution name of the counterparty
+FROM approved_trades at
+JOIN users u_placer ON at.order_placer = u_placer.user_id
+JOIN institutions inst_placer ON u_placer.institution_id = inst_placer.institution_id
+LEFT JOIN orders o ON at.order_id = o.order_id
+LEFT JOIN institutions i_counterparty ON o.counterparty_id = i_counterparty.institution_id
+WHERE at.status = 'pending_match'
+  AND $1 IN (u_placer.institution_id, o.counterparty_id)
+ORDER BY at.approved_at DESC
+
     `, institutionID)
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Error fetching approved_trades: "+err.Error())
@@ -718,8 +722,8 @@ func showMatchingScreen(c echo.Context) error {
 			&t.OrderCode,
 			&t.Status,
 			&t.OrderPlacer,
-			&t.PlacerName,
-			&t.CounterpartName,
+			&t.BuyerName,  // NEW
+			&t.SellerName, // NEW
 		); err != nil {
 			return c.String(http.StatusInternalServerError, "Error scanning row: "+err.Error())
 		}
