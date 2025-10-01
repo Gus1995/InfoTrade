@@ -113,6 +113,9 @@
     <div class="status" style="width:80px;">{{.Status}}</div>
   </div>
   {{end}}
+
+  <button id="submit-approved">Submit</button>
+
 </div>
 
 <h2>Rejected Orders</h2>
@@ -133,11 +136,15 @@
 function updateOrder(btn, newStatus) {
   const orderId = btn.getAttribute("data-order-id");
 
-  fetch(`/update-order-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ order_id: orderId, status: newStatus })
+  fetch(`/approve-order`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ 
+      order_id: parseInt(orderId),  // <-- convert string to integer
+      status: newStatus 
   })
+})
+
   .then(res => res.json())
   .then(data => {
     if (data.success) {
@@ -159,6 +166,30 @@ function updateOrder(btn, newStatus) {
   })
   .catch(err => { console.error(err); alert('Error updating order'); });
 }
+
+document.getElementById("submit-approved").addEventListener("click", () => {
+  const rows = document.querySelectorAll("#approved-orders .order-row");
+
+  rows.forEach(row => {
+    const orderId = row.getAttribute("data-order-id");
+
+    fetch(`/approve-order`, { // reuse the same endpoint
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: parseInt(orderId), status: 'submitted' })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        row.querySelector('.status').innerText = 'submitted';
+        row.querySelectorAll('.action-btn').forEach(b => b.remove());
+      } else {
+        alert('Failed to submit order ' + orderId);
+      }
+    })
+    .catch(err => { console.error(err); alert('Error submitting order ' + orderId); });
+  });
+});
 
 </script>
 

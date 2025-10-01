@@ -49,6 +49,20 @@ type Institution struct {
 	Name string
 }
 
+type Trade struct {
+	ApprovedTradeID int64
+	OrderID         int64
+	InstrumentID    int64
+	Side            string
+	Quantity        float64
+	Price           float64
+	OrderCode       string
+	Status          string
+	OrderPlacer     int64
+	PlacerName      string
+	CounterpartName sql.NullString
+}
+
 type Security struct {
 	InstrumentID int64
 	Ticker       string
@@ -552,11 +566,12 @@ func handleTrade(c echo.Context) error {
 	price, _ := strconv.ParseFloat(c.FormValue("price"), 64)
 	quantity, _ := strconv.ParseFloat(c.FormValue("quantity"), 64)
 	orderCode := c.FormValue("order_code")
+	orderPlacer := userIDVal
 
 	_, err := db.Exec(`
-		INSERT INTO orders (instrument_id, institution_id, counterparty_id, account_id, side, quantity, price, order_code, status, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW())`,
-		instrumentID, instID, counterpartyID, accountID, side, quantity, price, orderCode)
+		INSERT INTO orders (instrument_id, institution_id, counterparty_id, account_id, side, quantity, price, order_placer, order_code, status, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8, $9,'pending',NOW())`,
+		instrumentID, instID, counterpartyID, accountID, side, quantity, price, orderPlacer, orderCode)
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Error inserting order")
 	}
@@ -566,33 +581,38 @@ func handleTrade(c echo.Context) error {
 
 // --------------------- Approve Order ---------------------
 func approveOrder(c echo.Context) error {
-	orderID := c.FormValue("order_id")
-	if orderID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "order_id required"})
+	var body struct {
+		OrderID int64  `json:"order_id"`
+		Status  string `json:"status"`
 	}
 
-	// 1. Update orders table
-	_, err := db.Exec(`UPDATE orders SET status='approved' WHERE order_id=$1`, orderID)
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	_, err := db.Exec(`UPDATE orders SET status=$1 WHERE order_id=$2`, body.Status, body.OrderID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "db error"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update order"})
 	}
 
-	// 2. Insert into approved_trades
-	_, err = db.Exec(`
-		INSERT INTO approved_trades (order_id, instrument_id, side, quantity, price, secret_code, status, approved_at)
-		SELECT order_id, instrument_id, side, quantity, price, order_code, 'pending_match', NOW()
-		FROM orders WHERE order_id=$1
-	`, orderID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "db error inserting into approved_trades"})
+	// Insert into approved_trades if approved
+	if body.Status == "approved" {
+		_, err = db.Exec(`
+            INSERT INTO approved_trades (order_id, instrument_id, side, quantity, price, secret_code, status, order_placer, approved_at)
+            SELECT order_id, instrument_id, side, quantity, price, order_code, 'pending_match', order_placer, NOW()
+            FROM orders WHERE order_id=$1
+        `, body.OrderID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to insert into approved_trades"})
+		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "approved"})
+	return c.JSON(http.StatusOK, map[string]bool{"success": true})
 }
 
 // --------------------- Matching Engine ---------------------
 func runMatchingEngine() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -641,6 +661,7 @@ func matchTrades() {
 
 }
 
+// --------------------- Handler ---------------------
 func showMatchingScreen(c echo.Context) error {
 	sess, _ := session.Get("session", c)
 	instIDVal := sess.Values["institution_id"]
@@ -658,45 +679,31 @@ func showMatchingScreen(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/login")
 	}
 
-	// Fetch approved trades where order_placer's institution matches session
 	rows, err := db.Query(`
-        SELECT 
-            at.approved_trade_id,
-            at.order_id,
-            at.instrument_id,
-            at.side,
-            at.quantity,
-            at.price,
-            at.order_code,
-            at.status,
-            at.order_placer,
-            u.name AS placer_name,
-            i.name AS counterpart_name
-        FROM approved_trades at
-        JOIN users u ON at.order_placer = u.user_id
-        LEFT JOIN orders o ON at.order_id = o.order_id
-        LEFT JOIN institutions i ON o.counterparty_id = i.institution_id
-        WHERE u.institution_id = $1
-        ORDER BY at.approved_at DESC
+         SELECT 
+        at.approved_trade_id,
+        at.order_id,
+        at.instrument_id,
+        at.side,
+        at.quantity,
+        at.price,
+        at.secret_code AS order_code,
+        at.status,
+        at.order_placer,
+        u.name AS placer_name,
+        i.name AS counterpart_name
+    FROM approved_trades at
+    JOIN users u ON at.order_placer = u.user_id
+    LEFT JOIN orders o ON at.order_id = o.order_id
+    LEFT JOIN institutions i ON o.counterparty_id = i.institution_id
+    WHERE (u.institution_id = $1 OR o.counterparty_id = $1)
+      AND at.status = 'pending_match'
+    ORDER BY at.approved_at DESC
     `, institutionID)
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Error fetching approved_trades: "+err.Error())
 	}
 	defer rows.Close()
-
-	type Trade struct {
-		ApprovedTradeID int64
-		OrderID         int64
-		InstrumentID    int64
-		Side            string
-		Quantity        float64
-		Price           float64
-		OrderCode       string
-		Status          string
-		OrderPlacer     int64
-		PlacerName      string
-		CounterpartName sql.NullString
-	}
 
 	var trades []Trade
 	for rows.Next() {
@@ -720,6 +727,6 @@ func showMatchingScreen(c echo.Context) error {
 	}
 
 	return renderWithUser(c, http.StatusOK, "matching.html", map[string]interface{}{
-		"Trades": trades,
+		"ApprovedTrades": trades,
 	})
 }

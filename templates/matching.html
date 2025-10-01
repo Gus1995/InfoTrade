@@ -20,6 +20,7 @@
     .order-row div { padding: 0 4px; }
     h2 { font-size: 13px; margin-top: 15px; }
     .orders-list { margin-bottom: 20px; }
+    .action-btn { padding: 1px 4px; font-size: 10px; }
   </style>
 </head>
 <body>
@@ -64,9 +65,10 @@
     <div style="width:80px;">Side</div>
     <div style="width:70px;">Quantity</div>
     <div style="width:70px;">Price</div>
-    <div style="width:100px;">Order Code</div>
-    <div style="width:120px;">Counterpart</div>
-    <div style="width:80px;">Status</div>
+    <div style="width:100px;">Order ID</div>
+    <div style="width:1px;">Counterpart</div>
+    <div style="width:120px;">Status</div>
+    <div style="flex:1;">Action</div>
   </div>
 
   {{range .ApprovedTrades}}
@@ -75,14 +77,44 @@
     <div style="width:80px;">{{.Side}}</div>
     <div style="width:70px; text-align:right;">{{printf "%.2f" .Quantity}}</div>
     <div style="width:70px; text-align:right;">{{printf "%.4f" .Price}}</div>
-    <div style="width:100px;">{{.OrderCode}}</div>
-    <div style="width:120px;">{{.Counterpart}}</div>
-    <div class="status" style="width:80px;">{{.Status}}</div>
+    <div style="width:100px;">{{.OrderID}}</div>
+    <div style="width:180px;">{{.CounterpartName}}</div>
+    <div class="status" style="width:120px;">{{.Status}}</div>
+    <div style="flex:1;">
+      {{if eq .Status "pending_match"}}
+        <button onclick="submitTrade(this)">Submit</button>
+      {{end}}
+    </div>
   </div>
   {{end}}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+<script>
+function submitTrade(btn) {
+  const row = btn.closest('.order-row');
+  const orderId = row.getAttribute('data-order-id');
+
+  fetch('/submit-trade', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order_id: orderId })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      row.querySelector('.status').innerText = 'submitted';
+      btn.remove(); // remove the button
+    } else {
+      alert('Failed to submit trade');
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    alert('Error submitting trade');
+  });
+}
+</script>
 
 </body>
 </html>
