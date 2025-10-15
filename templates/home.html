@@ -39,8 +39,20 @@
           <li><a class="dropdown-item" href="/register-fixed-income">Securities</a></li>
         </ul>
       </li>
-      <li class="nav-item"><a class="nav-link" href="/matching">Matching</a></li>
-      <li class="nav-item"><a class="nav-link" href="/portfolio">Portfolio</a></li>
+<li class="nav-item dropdown">
+            <a
+              class="nav-link dropdown-toggle"
+              href="#"
+              role="button"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              >Matching</a
+            >
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="/matching">Pending Trades</a></li>
+              <li><a class="dropdown-item" href="#">Cleared</a></li>
+            </ul>
+          </li>      <li class="nav-item"><a class="nav-link" href="/portfolio">Portfolio</a></li>
       <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
         <ul class="dropdown-menu">
@@ -64,10 +76,12 @@
   <div class="order-row fw-bold" style="border-bottom:2px solid #000;">
     <div style="width:80px;">Instrument</div>
     <div style="width:80px;">Side</div>
-    <div style="width:70px;">Quantity</div>
-    <div style="width:70px;">Price</div>
+    <div style="width:100px;">Quantity</div>
+    <div style="width:100px;">Price</div>
     <div style="width:100px;">Order Code</div>
     <div style="width:120px;">Counterpart</div>
+    <div style="width:120px;">Commando</div>
+
     <div style="width:80px;">Status</div>
     <div style="flex:1;">Actions</div>
   </div>
@@ -76,10 +90,12 @@
   <div class="order-row" data-order-id="{{.OrderID}}">
     <div style="width:80px;">{{.InstrumentID}}</div>
     <div style="width:80px;">{{.Side}}</div>
-    <div style="width:70px; text-align:right;">{{printf "%.2f" .Quantity}}</div>
-    <div style="width:100px; text-align:right;">{{printf "%.4f" .Price}}</div>
+    <div style="width:100px; text-align:left;">{{printf "%.2f" .Quantity}}</div>
+    <div style="width:100px; text-align:left;">{{printf "%.4f" .Price}}</div>
     <div style="width:100px;">{{.OrderCode}}</div>
     <div style="width:120px;">{{.Counterpart}}</div>
+    <div style="width:120px;">{{.Commando}}</div>
+
     <div class="status" style="width:80px;">{{.Status}}</div>
     <div style="flex:1;">
      <button class="btn btn-sm btn-success action-btn" data-order-id="{{.OrderID}}" onclick="updateOrder(this, 'approved')">Approve</button>
@@ -99,6 +115,7 @@
     <div style="width:70px;">Price</div>
     <div style="width:100px;">Order Code</div>
     <div style="width:120px;">Counterpart</div>
+    <div style="width:120px;">Commando</div>
     <div style="width:80px;">Status</div>
   </div>
 
@@ -110,6 +127,8 @@
     <div style="width:70px; text-align:right;">{{printf "%.4f" .Price}}</div>
     <div style="width:100px;">{{.OrderCode}}</div>
     <div style="width:120px;">{{.Counterpart}}</div>
+    <div style="width:120px;">{{.Commando}}</div>
+
     <div class="status" style="width:80px;">{{.Status}}</div>
   </div>
   {{end}}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -52,7 +53,7 @@ type Institution struct {
 type Trade struct {
 	ApprovedTradeID int64
 	OrderID         int64
-	InstrumentID    string
+	InstrumentID    int64
 	Side            string
 	Quantity        float64
 	Price           float64
@@ -60,8 +61,10 @@ type Trade struct {
 	Status          string
 	OrderPlacer     int64
 	PlacerName      string
-	BuyerName       string // NEW
-	SellerName      string // NEW
+	BuyerName       string         // NEW
+	SellerName      string         // NEW
+	Commando        sql.NullString // if nullable
+	Ticker          string
 }
 
 type Security struct {
@@ -86,21 +89,24 @@ type Order struct {
 	OrderCode      string
 	Status         string
 	Counterpart    string
+	Commando       string
 }
 
 type ApprovedTrade struct {
-	ID          int
-	OrderID     int
-	Instrument  int64
-	Side        string
-	Quantity    float64
-	Price       float64
-	SecretCode  sql.NullString
-	Status      string
-	OrderPlacer int64  // the ID
-	PlacerName  string // the name of the order placer
-	ApprovedAt  time.Time
-	Ticker      string
+	ApprovedTradeID int64
+	OrderID         int64
+	Instrument      int64
+	Side            string
+	Quantity        float64
+	Price           float64
+	Status          string
+	OrderPlacer     int64  // the ID
+	PlacerName      string // the name of the order placer
+	ApprovedAt      time.Time
+	Ticker          string
+	Commando        string
+	FinancialAmount float64 // new field
+
 }
 
 // --------------------- Helper ---------------------
@@ -282,6 +288,7 @@ func homePage(c echo.Context) error {
             o.price::text,
             o.order_code,
             o.status,
+			o.commando,
             COALESCE(i.name,'') AS counterpart_name
         FROM orders o
         LEFT JOIN instruments ins ON o.instrument_id = ins.instrument_id
@@ -310,6 +317,7 @@ func homePage(c echo.Context) error {
 			&priceStr,
 			&o.OrderCode,
 			&o.Status,
+			&o.Commando,
 			&cp,
 		); err != nil {
 			return c.String(http.StatusInternalServerError, "Scan error: "+err.Error())
@@ -428,7 +436,6 @@ func handleRegisterFixedIncome(c echo.Context) error {
 	instrumentType := c.FormValue("type")
 	currency := c.FormValue("currency")
 	issuer := c.FormValue("issuer")
-	label := c.FormValue("label")
 	status := c.FormValue("status")
 
 	maturityDate, err := time.Parse("2006-01-02", c.FormValue("maturity_date"))
@@ -470,9 +477,9 @@ func handleRegisterFixedIncome(c echo.Context) error {
 
 	var instrumentID int
 	err = tx.QueryRow(`
-        INSERT INTO instruments (ticker,name,type,currency,issuer,label,status,created_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING instrument_id`,
-		ticker, name, instrumentType, currency, issuer, label, status, time.Now()).Scan(&instrumentID)
+        INSERT INTO instruments (ticker,name,type,currency,issuer,status,created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING instrument_id`,
+		ticker, name, instrumentType, currency, issuer, status, time.Now()).Scan(&instrumentID)
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Error inserting instrument: "+err.Error())
 	}
@@ -543,6 +550,15 @@ func showSecurities(c echo.Context) error {
 	})
 }
 
+func generateCommando() string {
+	letters := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	b := make([]rune, 6)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
 func handleTrade(c echo.Context) error {
 	sess, _ := session.Get("session", c)
 	userIDVal := sess.Values["user_id"]
@@ -567,18 +583,39 @@ func handleTrade(c echo.Context) error {
 	side := c.FormValue("side")
 	price, _ := strconv.ParseFloat(c.FormValue("price"), 64)
 	quantity, _ := strconv.ParseFloat(c.FormValue("quantity"), 64)
-	orderCode := c.FormValue("order_code")
 	orderPlacer := userIDVal
 
-	_, err := db.Exec(`
-		INSERT INTO orders (instrument_id, institution_id, counterparty_id, account_id, side, quantity, price, order_placer, order_code, status, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8, $9,'pending',NOW())`,
-		instrumentID, instID, counterpartyID, accountID, side, quantity, price, orderPlacer, orderCode)
+	// Retrieve ticker for the given instrument_id
+	var ticker string
+	err := db.QueryRow(`SELECT ticker FROM instruments WHERE instrument_id = $1`, instrumentID).Scan(&ticker)
+	if err != nil {
+		return c.String(http.StatusInternalServerError, "Error retrieving ticker for instrument")
+	}
+
+	// Generate commando
+	commando := generateCommando()
+
+	// Compute financial amount
+	financialAmount := price * quantity
+
+	// Insert order
+	_, err = db.Exec(`
+		INSERT INTO orders (
+			instrument_id, institution_id, counterparty_id, account_id, side, 
+			quantity, price, order_placer, commando, status, created_at, financial_amount, ticker
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',NOW(),$10,$11)
+	`,
+		instrumentID, instID, counterpartyID, accountID, side, quantity, price, orderPlacer, commando, financialAmount, ticker)
+
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "Error inserting order")
 	}
 
-	return c.Redirect(http.StatusSeeOther, "/home")
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"commando": commando,
+	})
 }
 
 // --------------------- Approve Order ---------------------
@@ -600,8 +637,8 @@ func approveOrder(c echo.Context) error {
 	// Insert into approved_trades if approved
 	if body.Status == "approved" {
 		_, err = db.Exec(`
-            INSERT INTO approved_trades (order_id, instrument_id, side, quantity, price, secret_code, status, order_placer, approved_at)
-            SELECT order_id, instrument_id, side, quantity, price, order_code, 'pending_match', order_placer, NOW()
+            INSERT INTO approved_trades (order_id, instrument_id, side, quantity, price, status, order_placer, approved_at, commando, ticker, financial_amount)
+            SELECT order_id, instrument_id, side, quantity, price, 'pending_match', order_placer, NOW(), commando, ticker, financial_amount
             FROM orders WHERE order_id=$1
         `, body.OrderID)
 		if err != nil {
@@ -623,8 +660,9 @@ func runMatchingEngine() {
 }
 
 func matchTrades() {
+
 	rows, err := db.Query(`
-		SELECT approved_trade_id, order_id, ticker, side, quantity, price, secret_code, status, approved_at
+		SELECT approved_trade_id, order_id, instrument_id, side, quantity, price, status, approved_at, ticker, commando
 		FROM approved_trades
 		WHERE status='pending_match'
 		ORDER BY approved_at ASC
@@ -638,29 +676,69 @@ func matchTrades() {
 	var trades []ApprovedTrade
 	for rows.Next() {
 		var t ApprovedTrade
-		if err := rows.Scan(&t.ID, &t.OrderID, &t.Ticker, &t.Side, &t.Quantity, &t.Price, &t.SecretCode, &t.Status, &t.ApprovedAt); err == nil {
-			trades = append(trades, t)
+		if err := rows.Scan(
+			&t.ApprovedTradeID,
+			&t.OrderID,
+			&t.Instrument,
+			&t.Side,
+			&t.Quantity,
+			&t.Price,
+			&t.Status,
+			&t.ApprovedAt,
+			&t.Ticker,
+			&t.Commando,
+		); err != nil {
+			fmt.Println("Error scanning trade:", err)
+			continue
 		}
+		trades = append(trades, t)
 	}
 
+	const epsilon = 0.000001 // for float comparison
 	for i := 0; i < len(trades); i++ {
 		for j := i + 1; j < len(trades); j++ {
 			t1 := trades[i]
 			t2 := trades[j]
-			if t1.Instrument == t2.Instrument &&
-				t1.Side != t2.Side &&
-				t1.Quantity == t2.Quantity &&
-				t1.Price == t2.Price &&
-				t1.SecretCode.Valid && t2.SecretCode.Valid &&
-				t1.SecretCode.String == t2.SecretCode.String {
 
-				// Mark as matched
-				db.Exec(`UPDATE approved_trades SET status='matched' WHERE id IN ($1,$2)`, t1.ID, t2.ID)
-				fmt.Printf("Matched trades: %d and %d\n", t1.ID, t2.ID)
+			fmt.Println("Checking trades:", t1.ApprovedTradeID, t2.ApprovedTradeID)
+			fmt.Println("Sides:", t1.Side, t2.Side, "Quantities:", t1.Quantity, t2.Quantity, "Prices:", t1.Price, t2.Price, "Commando:", t1.Commando, t2.Commando)
+
+			if t1.Ticker == t2.Ticker &&
+				t1.Side != t2.Side &&
+				absFloat(t1.Quantity-t2.Quantity) < epsilon &&
+				t1.Price == t2.Price &&
+				t1.Commando == t2.Commando {
+
+				// Use transaction to ensure both trades are updated together
+				tx, err := db.Begin()
+				if err != nil {
+					fmt.Println("Error starting transaction:", err)
+					continue
+				}
+
+				_, err = tx.Exec(`UPDATE approved_trades SET status='matched' WHERE approved_trade_id IN ($1,$2)`, t1.ApprovedTradeID, t2.ApprovedTradeID)
+				if err != nil {
+					fmt.Println("Error updating matched trades:", err)
+					tx.Rollback()
+					continue
+				}
+
+				if err := tx.Commit(); err != nil {
+					fmt.Println("Error committing transaction:", err)
+					continue
+				}
+
+				fmt.Printf("Matched trades: %d and %d\n", t1.ApprovedTradeID, t2.ApprovedTradeID)
 			}
 		}
 	}
+}
 
+func absFloat(a float64) float64 {
+	if a < 0 {
+		return -a
+	}
+	return a
 }
 
 // --------------------- Handler ---------------------
@@ -687,9 +765,10 @@ func showMatchingScreen(c echo.Context) error {
     at.order_id,
     at.instrument_id,
     at.side,
+	at.Ticker,
     at.quantity,
     at.price,
-    at.secret_code AS order_code,
+	o.commando,
     at.status,
     at.order_placer,               -- keep this for logic
     inst_placer.name AS buyer,     -- <-- institution name of the placer
@@ -717,9 +796,10 @@ ORDER BY at.approved_at DESC
 			&t.OrderID,
 			&t.InstrumentID,
 			&t.Side,
+			&t.Ticker,
 			&t.Quantity,
 			&t.Price,
-			&t.OrderCode,
+			&t.Commando,
 			&t.Status,
 			&t.OrderPlacer,
 			&t.BuyerName,  // NEW

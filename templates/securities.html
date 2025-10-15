@@ -20,6 +20,7 @@
     .security-row div { padding: 0 4px; }
     .security-row .trade-btn { padding: 1px 4px; font-size: 10px; }
     .modal-body label { font-size: 12px; }
+    #commandoDisplay { font-weight: bold; color: green; margin-left: 10px; }
   </style>
 </head>
 <body>
@@ -33,7 +34,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
-      <form method="POST" action="/order">
+      <form id="tradeForm">
         <div class="modal-body">
           <input type="hidden" id="instrumentId" name="instrument_id">
 
@@ -109,6 +110,9 @@
 
         <div class="modal-footer">
           <button type="submit" class="btn btn-primary btn-sm">Submit Trade</button>
+          <span id="commandoDisplay" style="display:none;">
+            Commando: <span id="commandoCode"></span>
+          </span>
         </div>
       </form>
     </div>
@@ -173,17 +177,43 @@
   {{end}}
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
 <script>
 document.addEventListener("DOMContentLoaded", function() {
   const tradeModal = document.getElementById('tradeModal');
-  tradeModal.addEventListener('show.bs.modal', function (event) {
+  const tradeForm = document.getElementById('tradeForm');
+  const commandoDisplay = document.getElementById('commandoDisplay');
+  const commandoCode = document.getElementById('commandoCode');
+
+  tradeModal.addEventListener('show.bs.modal', function(event) {
     const button = event.relatedTarget;
     document.getElementById('instrumentId').value = button.getAttribute('data-instrument-id');
     document.getElementById('instrumentName').value = button.getAttribute('data-instrument-name');
+    commandoDisplay.style.display = 'none';
+  });
+
+  tradeForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(tradeForm);
+
+    fetch('/order', {
+      method: 'POST',
+      body: formData
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.success) {
+        commandoCode.textContent = data.commando;
+        commandoDisplay.style.display = 'inline';
+      } else {
+        alert('Error submitting trade: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => alert('Request failed: ' + err));
   });
 });
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 </body>
 </html>

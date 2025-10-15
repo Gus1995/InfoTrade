@@ -132,7 +132,20 @@
 
           </ul>
         </li>
-        <li class="nav-item"><a class="nav-link" href="/matching">Matching</a></li>      
+        <li class="nav-item dropdown">
+            <a
+              class="nav-link dropdown-toggle"
+              href="#"
+              role="button"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              >Matching</a
+            >
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="/matching">Pending Trades</a></li>
+              <li><a class="dropdown-item" href="#">Cleared</a></li>
+            </ul>
+          </li>
         <li class="nav-item">
           <a class="nav-link" href="/portfolio">Portfolio</a>
         </li>
@@ -184,10 +197,6 @@
       <div class="col-50">
         <label for="issuer">Issuer</label>
         <input type="text" id="issuer" name="issuer">
-      </div>
-      <div class="col-50">
-        <label for="label">Label</label>
-        <input type="text" id="label" name="label">
       </div>
     </div>
 
